@@ -4,12 +4,15 @@
  * Convert Float32Array audio data to 16-bit PCM format for Assembly AI
  */
 export const convertToAssemblyAIPCM = (audioData: Float32Array): ArrayBuffer => {
-  const pcmData = new Int16Array(audioData.length);
+  // Convert Float32 [-1.0, 1.0] to signed 16-bit PCM, explicitly little-endian
+  const buffer = new ArrayBuffer(audioData.length * 2);
+  const view = new DataView(buffer);
   for (let i = 0; i < audioData.length; i++) {
-    const sample = Math.max(-1, Math.min(1, audioData[i]));
-    pcmData[i] = sample * 32767;
+    const s = Math.max(-1, Math.min(1, audioData[i]));
+    const val = s < 0 ? Math.round(s * 32768) : Math.round(s * 32767);
+    view.setInt16(i * 2, val, true); // little-endian
   }
-  return pcmData.buffer;
+  return buffer;
 };
 
 /**
@@ -165,6 +168,7 @@ export type StartAudioCaptureOptions = {
 };
 
 export type AudioCaptureController = {
+  getSampleRate: () => number;
   stop: () => Promise<{ audioURL?: string }>;
 };
 
@@ -179,6 +183,7 @@ export const startAudioCapture = async (
   const AudioContextCtor = (w.AudioContext ?? w.webkitAudioContext) as typeof AudioContext;
     const audioContext = new AudioContextCtor({ sampleRate });
   try { if (audioContext.state === 'suspended') { await audioContext.resume(); } } catch (err) { console.debug('AudioContext.resume failed', err); }
+  const usedSampleRate = audioContext.sampleRate;
 
   const audioBuffers: Float32Array[] = [];
 
@@ -206,6 +211,7 @@ export const startAudioCapture = async (
 
   // Return controller with stop logic
   const controller: AudioCaptureController = {
+    getSampleRate: () => usedSampleRate,
     stop: async () => {
       try {
         if (workletNode) {
@@ -234,7 +240,7 @@ export const startAudioCapture = async (
       // build WAV after cleanup
       let audioURL: string | undefined;
       if (audioBuffers.length > 0) {
-        const wavBlob = createWAVFile(audioBuffers, sampleRate);
+        const wavBlob = createWAVFile(audioBuffers, usedSampleRate);
         audioURL = URL.createObjectURL(wavBlob);
       }
       return { audioURL };

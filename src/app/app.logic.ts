@@ -64,7 +64,9 @@ export function makeAppPipeline(refs: PipelineRefs, setters: PipelineSetters): A
         },
       };
 
-      const ctrl = await connectAssemblyAI(AUDIO_CONFIG.SAMPLE_RATE, handlers);
+      const effectiveRate =
+        refs.audioCtrlRef.current?.getSampleRate?.() ?? AUDIO_CONFIG.SAMPLE_RATE;
+      const ctrl = await connectAssemblyAI(effectiveRate, handlers);
       refs.wsCtrlRef.current = ctrl;
     } catch (err) {
       setIsConnecting(false);
