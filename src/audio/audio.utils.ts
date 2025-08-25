@@ -130,6 +130,8 @@ export const setupAudioWorklet = async (
     // Connect audio source to worklet
     const source = audioContext.createMediaStreamSource(mediaStream);
     source.connect(workletNode);
+    // Ensure the worklet is pulled by the graph (keeps process() running)
+    try { workletNode.connect(audioContext.destination); } catch { /* ignore */ }
 
     return workletNode;
   } finally {
@@ -173,8 +175,10 @@ export const startAudioCapture = async (
   const constraints = (opts.constraints ?? AUDIO_CONFIG.MEDIA_CONSTRAINTS) as MediaStreamConstraints;
 
   const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-  const AudioContextCtor: typeof AudioContext = (window as unknown as { AudioContext: typeof AudioContext }).AudioContext;
+  const w = window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+  const AudioContextCtor = (w.AudioContext ?? w.webkitAudioContext) as typeof AudioContext;
     const audioContext = new AudioContextCtor({ sampleRate });
+  try { if (audioContext.state === 'suspended') { await audioContext.resume(); } } catch (err) { console.debug('AudioContext.resume failed', err); }
 
   const audioBuffers: Float32Array[] = [];
 
@@ -185,7 +189,7 @@ export const startAudioCapture = async (
     let sum = 0;
     for (let i = 0; i < floatData.length; i++) sum += floatData[i] * floatData[i];
     const rms = Math.sqrt(sum / floatData.length);
-    const level = Math.max(0, Math.min(1, rms * 1.5));
+    const level = Math.max(0, Math.min(1, rms * 8));
     opts.onLevel?.(level);
 
     // convert to PCM and emit
